@@ -32,6 +32,56 @@ technology. No equivalent stack exists for QSEE.
 This project provides that missing stack: userspace daemons that manage QSEE TA
 lifetimes and provide operating-system services to TAs through listeners.
 
+## Native QTEE transport (Vermeer development fork)
+
+This fork starts from upstream `36e06680cf7f690fccbdcd07abc2a64c4bb061d8`
+and adds an optional Linux QTEE object transport using upstream libqcomtee.
+The existing QSEECOM transport remains the default. Android HAL libraries are
+not linked or required by the QTEE transport.
+
+Build against exported Linux QTEE object UAPI headers and target builds of
+[libqcomtee](https://github.com/quic/quic-teec) and
+[QCBOR](https://github.com/laurencelundblade/QCBOR):
+
+```sh
+make CC=aarch64-linux-gnu-gcc KERNEL_UAPI=/path/to/kernel/uapi/include \
+  QCOMTEE_PREFIX=/path/to/native/deps LDFLAGS=-static
+./qsee-supplicant --transport qcomtee --state-dir /private/linux-tee-state
+```
+
+Tested dependency revisions are libqcomtee
+`736419e25a2036aac3292a10a93e394a90750ca3` and QCBOR
+`d80c5c3f6ed0235993b7f4ca6528ee3c0c5d29d5`. The transport discovers a QTEE
+object device, registers FS (10) and GPFS (`0x7000`) callbacks, and supplies the
+existing filesystem handlers. It supports legacy GPFS 0/1 transfers across the
+full shared region, while retaining the published 500 KiB limits for 8/9.
+
+All requested paths, including absolute TA paths, are relative to `--state-dir`.
+Use a dedicated root-owned directory with mode 0700; files are mode 0600.
+Do not point it at Android persist or mount Android biometric storage writable.
+For Vermeer tests, factory calibrations are private copies under
+`mnt/vendor/persist/goodix/` inside this directory. Linux enrollment objects
+occupy a separate namespace inside the same directory. Template contents are
+not logged. The daemon performs filesystem operations requested by the TA;
+trust only the signed application intended for this storage root.
+
+No QTEE autostart unit is installed by this development workflow. Start the
+listener before the client and stop it only after the client has unloaded its
+owned TA. SIGTERM releases listener registrations, drains deferred callbacks,
+and closes memory objects and filesystem handles. Live tests on Vermeer cover
+initialization and cancellation; successful persistent fingerprint matching is
+still under development.
+
+```sh
+make check CC=cc
+make check-qcomtee CC=cc KERNEL_UAPI=/path/to/kernel/uapi/include \
+  QCOMTEE_PREFIX=/path/to/native/deps
+```
+
+Both test suites support AddressSanitizer and UBSan. Additional regressions cover
+NULL storage for callback output buffers, oversized and maximum legacy chunks,
+EOF, and FIFO rejection.
+
 ## QSEE communication interface and listener services
 
 Older QSEE systems use the QSEE communication interface (QSEECOM) to load TAs,

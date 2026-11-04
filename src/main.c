@@ -24,9 +24,22 @@ static void ready_handler(void *data)
 int main(int argc, char **argv)
 {
 	const char *state = "/var/lib/qsee-supplicant"; struct qs_store store = { .root_fd = -1 };
+	const struct qs_transport *transport = &qs_qseecom_transport;
 	unsigned int delay = 1;
-	if (argc == 3 && !strcmp(argv[1], "--state-dir")) state = argv[2];
-	else if (argc != 1) { fprintf(stderr, "usage: %s [--state-dir PATH]\n", argv[0]); return 2; }
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "--state-dir") && i + 1 < argc) state = argv[++i];
+		else if (!strcmp(argv[i], "--transport") && i + 1 < argc) {
+			const char *name = argv[++i];
+			if (!strcmp(name, "qseecom")) transport = &qs_qseecom_transport;
+#ifdef HAVE_QCOMTEE
+			else if (!strcmp(name, "qcomtee")) transport = &qs_qcomtee_transport;
+#endif
+			else { fprintf(stderr, "Unsupported transport: %s\n", name); return 2; }
+		} else {
+			fprintf(stderr, "usage: %s [--state-dir PATH] [--transport NAME]\n", argv[0]);
+			return 2;
+		}
+	}
 	umask(0077);
 	if (qs_store_open(&store, state, 0600, 0700)) { perror("state directory"); return 1; }
 	{
@@ -37,12 +50,12 @@ int main(int argc, char **argv)
 		sigaction(SIGTERM, &action, NULL);
 	}
 	while (!stopping) {
-		fprintf(stderr, "event=transport_start transport=%s state=%s\n", qs_qseecom_transport.name, state);
-		if (!qs_qseecom_transport.serve(&store, qs_builtin_services,
+		fprintf(stderr, "event=transport_start transport=%s state=%s\n", transport->name, state);
+		if (!transport->serve(&store, qs_builtin_services,
 					 qs_builtin_service_count, &stopping,
 					 ready_handler, &delay)) break;
 		fprintf(stderr, "event=transport_error transport=%s errno=%d message=\"%s\" retry=%u\n",
-			qs_qseecom_transport.name, errno, strerror(errno), delay);
+			transport->name, errno, strerror(errno), delay);
 		for (unsigned int i = 0; i < delay && !stopping; i++) sleep(1);
 		if (delay < 30) delay *= 2;
 	}

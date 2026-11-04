@@ -3,3 +3,4 @@
 /test-protocol
 /test-notify
 /test-app-acquire
+/test-qcomtee-callback

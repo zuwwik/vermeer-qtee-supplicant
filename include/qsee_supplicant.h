@@ -49,3 +49,6 @@ struct qs_transport {
 };
 
 extern const struct qs_transport qs_qseecom_transport;
+#ifdef HAVE_QCOMTEE
+extern const struct qs_transport qs_qcomtee_transport;
+#endif

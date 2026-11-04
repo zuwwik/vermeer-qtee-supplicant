@@ -132,5 +132,35 @@ int main(void)
 	snprintf(file, sizeof(file), "%s/evil", root); assert(!symlink("/tmp", file));
 	memset(b, 0, QS_GPFS_BUFFER_SIZE); p32(b, 1); strcpy((char *)b + 4, "evil/escaped");
 	p32(b + 0x108, 1); b[0x110] = 1; assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE)); assert(u32(b + 4) != 0);
+	/* QTEE legacy reads/writes use more than the published 500 KiB payload. */
+	size_t write_limit = QS_GPFS_BUFFER_SIZE - 0x110;
+	size_t read_limit = QS_GPFS_BUFFER_SIZE - 12;
+	memset(b, 0, QS_GPFS_BUFFER_SIZE); p32(b, 1);
+	strcpy((char *)b + 4, "native-large.so"); p32(b + 0x108, write_limit);
+	memset(b + 0x110, 0x5a, write_limit);
+	assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE));
+	assert(u32(b + 4) == 0 && u32(b + 8) == write_limit);
+	memset(b, 0, QS_GPFS_BUFFER_SIZE); strcpy((char *)b + 4, "native-large.so");
+	p32(b + 0x108, read_limit);
+	assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE));
+	assert(u32(b + 4) == 0 && u32(b + 8) == write_limit);
+	for (size_t i = 0; i < write_limit; i++) assert(b[12 + i] == 0x5a);
+	memset(b, 0, QS_GPFS_BUFFER_SIZE); strcpy((char *)b + 4, "native-large.so");
+	p32(b + 0x104, write_limit); p32(b + 0x108, read_limit);
+	assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE));
+	assert(u32(b + 4) == 0 && u32(b + 8) == 0);
+	memset(b, 0, QS_GPFS_BUFFER_SIZE); strcpy((char *)b + 4, "native-large.so");
+	p32(b + 0x108, read_limit + 1);
+	assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE) && u32(b + 4) == EINVAL);
+	p32(b, 1); strcpy((char *)b + 4, "native-large.so"); p32(b + 0x108, write_limit + 1);
+	assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE) && u32(b + 4) == EINVAL);
+	memset(b, 0, QS_GPFS_BUFFER_SIZE); p32(b, 8); strcpy((char *)b + 4, "native-large.so");
+	p32(b + 0x108, read_limit);
+	assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE) && u32(b + 4) == EINVAL);
+
+	/* A non-regular GPFS object must fail without blocking the TEE callback. */
+	snprintf(file, sizeof(file), "%s/fifo", root); assert(!mkfifo(file, 0600));
+	memset(b, 0, QS_GPFS_BUFFER_SIZE); strcpy((char *)b + 4, "fifo"); p32(b + 0x108, 1);
+	assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE) && u32(b + 4) == EINVAL);
 	qs_store_close(&store); free(b); puts("protocol tests: OK"); return 0;
 }

@@ -15,12 +15,18 @@
 static int open_beneath(int dirfd, const char *path, int flags, mode_t mode)
 {
 	struct open_how how = {
-		.flags = (uint64_t)flags | O_CLOEXEC,
+		.flags = (uint64_t)flags | O_CLOEXEC | O_NONBLOCK,
 		.mode = mode,
 		.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS |
 			   RESOLVE_NO_SYMLINKS,
 	};
-	return syscall(SYS_openat2, dirfd, path, &how, sizeof(how));
+	int fd = syscall(SYS_openat2, dirfd, path, &how, sizeof(how));
+	if (fd >= 0) {
+		struct stat st;
+		int error = fstat(fd, &st) ? errno : S_ISREG(st.st_mode) ? 0 : EINVAL;
+		if (error) { close(fd); errno = error; return -1; }
+	}
+	return fd;
 }
 
 static int copy_file_at(int dirfd, const char *source, const char *dest,
@@ -31,7 +37,7 @@ static int copy_file_at(int dirfd, const char *source, const char *dest,
 	ssize_t got, done;
 	int in = -1, out = -1, rc = -1;
 
-	in = openat(dirfd, source, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	in = open_beneath(dirfd, source, O_RDONLY, 0);
 	if (in < 0)
 		return errno == ENOENT ? 0 : -1;
 	if (snprintf(tmp, sizeof(tmp), ".%s.bak.tmp.%ld", source,
@@ -166,7 +172,11 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 	if (command % 4 == 0 || command % 4 == 1) {
 		offset = read_request->offset;
 		length = read_request->count;
-		if (offset < 0 || length > QS_GPFS_DATA_SIZE ||
+		/* QTEE 5.2's legacy 0/1 operations use the full shared region. */
+		size_t maximum = QS_GPFS_DATA_SIZE;
+		if (command == 0) maximum = size - offsetof(struct qs_gpfs_io_response, data);
+		if (command == 1) maximum = size - offsetof(struct qs_gpfs_write_request, data);
+		if (offset < 0 || length > maximum ||
 		    (command % 4 == 0 &&
 		     (size_t)length > size - offsetof(struct qs_gpfs_io_response, data)) ||
 		    (command % 4 == 1 &&

@@ -1,6 +1,6 @@
 # Qualcomm Secure Execution Environment supplicant
 
-[![Continuous integration](https://github.com/wrobelda/qsee-supplicant/actions/workflows/ci.yml/badge.svg)](https://github.com/wrobelda/qsee-supplicant/actions/workflows/ci.yml)
+[![Continuous integration](https://github.com/zuwwik/vermeer-qtee-supplicant/actions/workflows/ci.yml/badge.svg)](https://github.com/zuwwik/vermeer-qtee-supplicant/actions/workflows/ci.yml)
 
 A Trusted Execution Environment (TEE) is an isolated execution environment
 separate from the host operating system. Qualcomm Secure Execution Environment
@@ -69,8 +69,11 @@ No QTEE autostart unit is installed by this development workflow. Start the
 listener before the client and stop it only after the client has unloaded its
 owned TA. SIGTERM releases listener registrations, drains deferred callbacks,
 and closes memory objects and filesystem handles. Live tests on Vermeer cover
-initialization and cancellation; successful persistent fingerprint matching is
-still under development.
+initialization, cancellation, persistent enrollment, matching and rejection.
+The native backend, KDE target and on-demand service integration are maintained
+in [vermeer-fingerprint](https://github.com/zuwwik/vermeer-fingerprint), with the
+libfprint driver in
+[vermeer-libfprint](https://github.com/zuwwik/vermeer-libfprint/tree/goodix-qsee).
 
 ```sh
 make check CC=cc
